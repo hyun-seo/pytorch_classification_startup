@@ -1,0 +1,8 @@
+__pycache__/params.cpython-37.pyc
+data/*
+*.pyc
+
+exps/logs/*
+exps/tb/*
+.vscode/settings.json
+test.yml
