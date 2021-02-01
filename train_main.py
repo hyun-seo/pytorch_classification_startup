@@ -1,5 +1,5 @@
 from utils.accuracy import accuracy
-from models.resnet import resnet18
+from models.resnet import resnet18, resnet34
 import os
 from utils.meters import Meter
 import torch
@@ -13,10 +13,20 @@ from torch.utils.tensorboard import SummaryWriter
 
 from params import Params
 
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("--exp_name", type=str, default="baseline")
+parser.add_argument("--model", type=str, default="resnet18")
+parser.add_argument("--dataset", type=str, default="cifar10")
+args = parser.parse_args()
+
 
 params = Params()
+params.exp_name = args.exp_name
+params.model = args.model
+params.dataset = args.dataset
 params.build()
-
+print(params)
 torch.cuda.manual_seed_all(params.seed)
 
 
@@ -60,6 +70,8 @@ testloader = data.DataLoader(
 model = None
 if params.model == "resnet18":
     model = resnet18(num_classes)
+elif params.model == "resnet34":
+    model = resnet34(num_classes)
 if model == None:
     raise NotImplementedError
 
@@ -67,16 +79,12 @@ model.cuda()
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(model.parameters(), lr=params.lr,
                       momentum=params.momentum, weight_decay=params.weight_decay)
+from torch.optim.lr_scheduler import MultiStepLR
+scheduler = MultiStepLR(optimizer, milestones=params.schedule, gamma=0.1)
 
 state = dict()
+state['lr'] = 0.1
 
-
-def adjust_learning_rate(optimizer, epoch):
-    global state
-    if epoch in params.schedule:
-        state['lr'] *= params.gamma
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = state['lr']
 
 
 # =======================================
@@ -97,7 +105,7 @@ test_top5 = Meter()
 
 
 for e in range(params.epoch):
-    adjust_learning_rate(optimizer, e)
+    print(f"lr {optimizer.param_groups}")
 
     print(f"===== epoch : {e} =====")
 
@@ -123,6 +131,7 @@ for e in range(params.epoch):
         _, predicted = outputs.max(1)
         train_top1.update(predicted.eq(targets).sum().item(), inputs.size(0))
 
+    scheduler.step()
 
 
     logger.add_scalar("train/loss", train_loss.avg(), e)

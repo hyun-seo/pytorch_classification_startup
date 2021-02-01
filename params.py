@@ -21,6 +21,7 @@ class Params:
         self.lr = 0.1
         self.weight_decay = 5e-4
         self.momentum = 0.9
+        self.gamma = 0.1
         self.schedule = [150, 225]
 
 
@@ -33,6 +34,12 @@ class Params:
             load_dict = yaml.load(f, Loader=yaml.FullLoader)
         for k, v in load_dict.items():
             self.__setattr__(k, v)
+
+    def __str__(self) -> str:
+        _str = "==== params setting ====\n"
+        for k, v in self.__dict__.items():
+            _str += f"{k} : {v}\n"
+        return _str
 
     def build(self) -> None:
 
