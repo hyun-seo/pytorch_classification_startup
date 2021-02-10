@@ -14,7 +14,7 @@ class Params:
 
         # learning params
         self.batch_size = 128
-        self.epoch = 300
+        self.epoch = 250
         self.resume = "False"
 
         # opt params
@@ -23,7 +23,7 @@ class Params:
         self.momentum = 0.9
         self.gamma = 0.1
         self.schedule = [150, 225]
-
+        self.drop = False
 
     def save(self, path):
         with open(path, 'w') as f:

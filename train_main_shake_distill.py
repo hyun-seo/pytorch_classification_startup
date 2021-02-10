@@ -1,28 +1,31 @@
-from torch.optim.lr_scheduler import MultiStepLR
-from utils.accuracy import accuracy
-from models.resnet import resnet18, resnet18_randdrop, resnet34, resnet34_randdrop
 import os
-from utils.meters import Meter
-import torch
+
 from tqdm import tqdm
+import torch
 import torch.utils.data as data
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torch.nn as nn
 import torch.optim as optim
+from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.tensorboard import SummaryWriter
+import torch.nn.functional as F
 
+from models.resnet import resnet18, resnet18_randdrop, resnet34, resnet34_randdrop
+from utils.accuracy import accuracy
+from utils.meters import Meter
 from params import Params
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument("--exp_name", type=str, default="baseline")
-parser.add_argument("--model", type=str, default="resnet18")
-parser.add_argument("--dataset", type=str, default="cifar10")
-parser.add_argument("--drop", type=bool, default=False)
-
+parser.add_argument("--exp_name", type=str, default="debug_drop_true")
+parser.add_argument("--model", type=str, default="resnet18_randdrop")
+parser.add_argument("--dataset", type=str, default="cifar100")
+parser.add_argument("--drop", type=bool, default=True)
 args = parser.parse_args()
 
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
+# os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 params = Params()
 params.exp_name = args.exp_name
@@ -81,12 +84,13 @@ elif params.model == "resnet18_randdrop":
     model = resnet18_randdrop()
 elif params.model == "resnet34_randdrop":
     model = resnet34_randdrop()
-
 if model == None:
     raise NotImplementedError
-
-model.cuda()
+if torch.cuda.is_available():
+    model.cuda()
 criterion = nn.CrossEntropyLoss()
+criterion_kl = nn.KLDivLoss(reduction='batchmean')
+
 optimizer = optim.SGD(model.parameters(), lr=params.lr,
                       momentum=params.momentum, weight_decay=params.weight_decay)
 scheduler = MultiStepLR(optimizer, milestones=params.schedule, gamma=0.1)
@@ -116,25 +120,30 @@ for e in range(params.epoch):
     print(f"===== epoch : {e} =====")
 
     model.train()
+    model.parameters()
     train_loss.reset()
     train_top1.reset()
     train_top5.reset()
     for input in tqdm(trainloader):
         inputs, targets = input
-        inputs, targets = inputs.cuda(), targets.cuda()
+        if torch.cuda.is_available():
+            inputs, targets = inputs.cuda(), targets.cuda()
 
-        # compute output
-        if params.drop:
-            outputs = model(inputs, flag=True)
-        else:
-            outputs = model(inputs)
+            # compute output
+            outputs_drop = model(inputs, flag=True)
+            outputs = model(inputs, flag=False)
 
-        loss = criterion(outputs, targets)
+            loss = criterion(outputs, targets)
 
-        # compute gradient and do SGD step
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+            T = 3
+            loss += T**2 * criterion_kl(
+                input=F.log_softmax(outputs_drop/T,dim=1),
+                target=F.softmax(outputs/T, dim=1))
+
+            # compute gradient and do SGD step
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
         # measure accuracy and record loss
         train_loss.update(loss.item(), inputs.size(0))
@@ -164,7 +173,7 @@ for e in range(params.epoch):
             _, predicted = outputs.max(1)
             test_top1.update(predicted.eq(
                 targets).sum().item(), inputs.size(0))
-
+        print(test_top1.avg())
         logger.add_scalar("test/loss", test_loss.avg(), e)
         logger.add_scalar("test/train_top1", test_top1.avg(), e)
 
