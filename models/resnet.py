@@ -7,7 +7,6 @@
 import torch
 import torch.nn as nn
 from torch.nn.modules.activation import ReLU
-from models.shakedrop import ShakeDrop
 from torch.autograd import Variable
 import numpy as np
 
@@ -83,51 +82,6 @@ class BottleNeck(nn.Module):
 
     def forward(self, x):
         return nn.ReLU(inplace=True)(self.residual_function(x) + self.shortcut(x))
-
-
-class ShakeBasicBlock(nn.Module):
-
-    """Basic Block for resnet 18 and resnet 34
-    """
-
-    # BasicBlock and BottleNeck block
-    # have different output size
-    # we use class attribute expansion
-    # to distinct
-    expansion = 1
-
-    def __init__(self, in_channels, out_channels, stride=1, p_shakedrop=1.0):
-        super().__init__()
-
-        # residual function
-        self.residual_function = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3,
-                      stride=stride, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels * BasicBlock.expansion,
-                      kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels * BasicBlock.expansion)
-        )
-
-        # shortcut
-        self.shortcut = nn.Sequential()
-        self.shake_drop = ShakeDrop(p_shakedrop)
-
-        # the shortcut output dimension is not the same with residual function
-        # use 1*1 convolution to match the dimension
-        if stride != 1 or in_channels != BasicBlock.expansion * out_channels:
-            self.shortcut = nn.Sequential(
-                nn.Conv2d(in_channels, out_channels * BasicBlock.expansion,
-                          kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(out_channels * BasicBlock.expansion)
-            )
-
-    def forward(self, x, shake=True):
-        branch = self.residual_function(x)
-        if shake:
-            branch = self.shake_drop(branch)
-        return nn.ReLU(inplace=True)(branch + self.shortcut(x))
 
 
 class ResNet(nn.Module):
@@ -207,16 +161,18 @@ class CustomResNet(nn.Module):
         self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512 * block.expansion, num_classes)
 
-    def forward(self, x, flag=False , features=False):
-        p = 0.5
+    def forward(self, x, flag=False , features=False, p=0.5):
+        
         rand = [False, False, False, False, ]
         if flag:
             rand = np.random.choice(a=[False, True], size=(4), p=[p, 1-p])
+
         output = self.conv1(x)
         output = self.conv2_x(output, rand[0])
         output = self.conv3_x(output, rand[1])
         output = self.conv4_x(output, rand[2])
         output = self.conv5_x(output, rand[3])
+        
         f = self.avg_pool(output)
         output = f.view(f.size(0), -1)
         output = self.fc(output)
@@ -280,7 +236,8 @@ class RandomDropBasicBlock(nn.Module):
                 nn.BatchNorm2d(out_channels * BasicBlock.expansion)
             )
 
-    def forward(self, x, flag=False):
+    def forward(self, x, flag=False, train=False):
+        
         if flag:
             return nn.ReLU(inplace=True)(self.residual_function(x)*0 + self.shortcut(x))
         else:

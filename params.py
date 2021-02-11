@@ -46,6 +46,15 @@ class Params:
         self.log_dir = os.path.join("./exps/logs", self.exp_name)
         self.save_dir = os.path.join(self.log_dir, "saved_model")
         self.tb_dir = os.path.join("./exps/tb", self.exp_name)
+
+        print(self.__dict__)        
+        for k,v in self.__dict__.items():
+            if v == "True":
+                self.__dict__[k] = True
+            elif v == "False":
+                self.__dict__[k] = False
+
+
         if self.resume == "True":
             if not os.path.exists(self.log_dir):
                 os.makedirs(self.log_dir)
